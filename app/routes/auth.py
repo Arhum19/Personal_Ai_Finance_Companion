@@ -1,18 +1,12 @@
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.orm import Session
-from app.database import SessionLocal
+from app.dependencies import get_db, get_current_user
 from app.models import User
-from app.schemas import UserRegister, UserResponse
-from app.utils import hash_password
+from app.schemas import UserRegister, UserResponse, UserLogin, Token
+from app.utils import hash_password, verify_password
+from app.token import create_access_token
 
 router = APIRouter(prefix="/auth", tags=["auth"])
-
-def get_db():
-    db = SessionLocal()
-    try:
-        yield db
-    finally:
-        db.close()
 
 @router.post("/register", response_model=UserResponse)
 async def register(user: UserRegister, db: Session = Depends(get_db)):
@@ -37,3 +31,33 @@ async def register(user: UserRegister, db: Session = Depends(get_db)):
     db.refresh(db_user)
     
     return db_user
+
+@router.post("/login", response_model=Token)
+async def login(user_credentials: UserLogin, db: Session = Depends(get_db)):
+    """Login user and return JWT token"""
+    user = db.query(User).filter(User.email == user_credentials.email).first()
+    
+    if not user:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Invalid email or password"
+        )
+    
+    if not verify_password(user_credentials.password, user.password):
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Invalid email or password"
+        )
+    
+    access_token = create_access_token(data={"sub": user.email})
+    
+    return {
+        "access_token": access_token,
+        "token_type": "bearer",
+        "user": user
+    }
+
+@router.get("/me", response_model=UserResponse)
+async def get_me(current_user: User = Depends(get_current_user)):
+    """Get current logged-in user info"""
+    return current_user
