@@ -1,12 +1,24 @@
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.orm import Session
 from app.dependencies import get_db, get_current_user
-from app.models import User
+from app.models import User, Category
 from app.schemas import UserRegister, UserResponse, UserLogin, Token
 from app.utils import hash_password, verify_password
 from app.tokens import create_access_token
 
 router = APIRouter(prefix="/auth", tags=["auth"])
+
+# Default categories to seed for every new user
+DEFAULT_CATEGORIES = [
+    "Food",
+    "Transport",
+    "Shopping",
+    "Entertainment",
+    "Bills",
+    "Health",
+    "Other"
+]
+
 
 @router.post("/register", response_model=UserResponse)
 async def register(user: UserRegister, db: Session = Depends(get_db)):
@@ -29,6 +41,12 @@ async def register(user: UserRegister, db: Session = Depends(get_db)):
     db.add(db_user)
     db.commit()
     db.refresh(db_user)
+    
+    # Seed default categories for the new user
+    for cat_name in DEFAULT_CATEGORIES:
+        db_category = Category(name=cat_name, user_id=db_user.id)
+        db.add(db_category)
+    db.commit()
     
     return db_user
 

@@ -13,7 +13,7 @@ from datetime import datetime
 import json
 
 # Choose model: "tiny", "small", "base" -> tiny fastest on CPU
-MODEL_NAME = "tiny"   # change to "tiny" for faster tests on CPU
+MODEL_NAME = "small"   # change to "tiny" for faster tests on CPU
 
 print("Loading Whisper model (this may take a moment)...")
 model = whisper.load_model(MODEL_NAME)
@@ -28,7 +28,7 @@ CATEGORIES = {
     'health': ['doctor', 'medicine', 'pharmacy', 'gym', 'hospital'],
     'other': ['gift', 'donation', 'misc', 'other']
 }
-
+    
 recording = False
 audio_chunks = []
 
