@@ -108,7 +108,9 @@ class ExpenseResponse(BaseModel):
 class BalanceResponse(BaseModel):
     total_income: Decimal
     total_expense: Decimal
-    remaining_balance: Decimal
+    goal_contributions: Decimal          # Total contributed to goals
+    remaining_balance: Decimal           # income - expense
+    available_to_spend: Decimal          # remaining_balance - goal_contributions
 
 
 # ==================== GOAL SCHEMAS ====================
@@ -148,16 +150,13 @@ class GoalProgressResponse(BaseModel):
     
     # Calculated fields for dashboard/charts
     monthly_income: Decimal
-    total_savings_pool: Decimal          # savings_rate × monthly_income
-    active_goals_count: int
-    your_monthly_allocation: Decimal     # savings_pool ÷ active_goals
-    months_elapsed: int
-    amount_saved_so_far: Decimal         # months_elapsed × monthly_allocation
-    remaining_amount: Decimal            # target - saved
-    months_needed: int                   # remaining ÷ monthly_allocation
+    suggested_monthly_contribution: Decimal  # savings_rate × monthly_income ÷ active_goals
+    total_contributed: Decimal               # SUM of actual contributions (REAL!)
+    remaining_amount: Decimal                # target - contributed
+    months_needed: int                       # remaining ÷ suggested_monthly
     estimated_completion_date: datetime | None
-    progress_percentage: Decimal         # (saved ÷ target) × 100
-    is_achievable: bool                  # False if no income
+    progress_percentage: Decimal             # (contributed ÷ target) × 100
+    is_achievable: bool                      # False if no income
 
     class Config:
         from_attributes = True
@@ -167,4 +166,30 @@ class AllGoalsProgressResponse(BaseModel):
     monthly_income: Decimal
     total_savings_pool: Decimal
     active_goals_count: int
+    total_contributed_all_goals: Decimal     # Sum of all contributions
     goals: list[GoalProgressResponse]
+
+
+# ==================== GOAL CONTRIBUTION SCHEMAS ====================
+
+class GoalContributionCreate(BaseModel):
+    amount: Decimal = Field(..., gt=0, description="Amount to contribute")
+    date: datetime | None = Field(None, description="Date of contribution (defaults to now)")
+
+class GoalContributionResponse(BaseModel):
+    id: int
+    amount: Decimal
+    date: datetime
+    goal_id: int
+    user_id: int
+    goal_title: str | None = None  # Optionally include goal title
+
+    class Config:
+        from_attributes = True
+
+class GoalContributionsListResponse(BaseModel):
+    goal_id: int
+    goal_title: str
+    target_amount: Decimal
+    total_contributed: Decimal
+    contributions: list[GoalContributionResponse]

@@ -1,6 +1,6 @@
 """
 NLP Parser for Voice Client
-Parses transcribed text into structured expense/income/goal data
+Parses transcribed text into structured expense/income/goal/contribution data
 """
 import re
 from datetime import datetime
@@ -12,18 +12,24 @@ from .config import (
     INCOME_KEYWORDS, 
     INCOME_SOURCES, 
     NUMBER_WORDS,
-    GOAL_KEYWORDS
+    GOAL_KEYWORDS,
+    CONTRIBUTION_KEYWORDS
 )
 
 
 def detect_intent(text: str) -> str:
     """
-    Detect whether the text represents an INCOME, EXPENSE, or GOAL.
-    Returns: 'income', 'expense', or 'goal'
+    Detect whether the text represents an INCOME, EXPENSE, GOAL, or CONTRIBUTION.
+    Returns: 'income', 'expense', 'goal', or 'contribution'
     """
     text_lower = text.lower()
     
-    # Check for goal keywords first (highest priority)
+    # Check for contribution keywords first (highest priority)
+    for keyword in CONTRIBUTION_KEYWORDS:
+        if keyword in text_lower:
+            return 'contribution'
+    
+    # Check for goal keywords
     for keyword in GOAL_KEYWORDS:
         if keyword in text_lower:
             return 'goal'
@@ -196,6 +202,44 @@ def extract_goal_title(text: str) -> str:
     return 'Savings Goal'
 
 
+def extract_goal_name_for_contribution(text: str) -> str:
+    """
+    Extract goal name from a contribution statement.
+    
+    Examples:
+    - "Contribute 5000 to laptop goal" -> "laptop"
+    - "Add 10000 to my vacation fund" -> "vacation"
+    - "Put 2000 towards car" -> "car"
+    """
+    text_lower = text.lower()
+    
+    # Patterns to extract goal name from contribution
+    patterns = [
+        r'(?:to|towards|for)\s+(?:my\s+)?(?:the\s+)?(.+?)(?:\s+goal|\s+fund|\s*$)',
+        r'(?:contribute|add|put|allocate|deposit|save)\s+\d+\s+(?:to|towards|for)\s+(?:my\s+)?(.+?)(?:\s+goal|\s+fund|\s*$)',
+    ]
+    
+    for pattern in patterns:
+        match = re.search(pattern, text_lower)
+        if match:
+            goal_name = match.group(1).strip()
+            goal_name = re.sub(r'\s+', ' ', goal_name)
+            goal_name = goal_name.strip('.,!? ')
+            if goal_name and len(goal_name) > 1:
+                return goal_name.lower()
+    
+    # Fallback: look for common goal item names
+    goal_items = ['laptop', 'phone', 'car', 'bike', 'vacation', 'holiday', 'trip', 
+                  'wedding', 'house', 'home', 'education', 'emergency', 'iphone', 
+                  'macbook', 'watch', 'camera', 'tv', 'playstation', 'xbox']
+    
+    for item in goal_items:
+        if item in text_lower:
+            return item
+    
+    return None  # Couldn't identify goal
+
+
 def generate_title(text: str, category: str) -> str:
     """
     Generate a short title for the expense.
@@ -241,7 +285,7 @@ def parse_text(text: str) -> dict:
         text: Transcribed text from Whisper
         
     Returns:
-        dict with type, amount, category/source/title, description, date
+        dict with type, amount, category/source/title/goal_name, description, date
     """
     if not text or not text.strip():
         return {
@@ -249,7 +293,7 @@ def parse_text(text: str) -> dict:
             "error": "Empty or invalid text"
         }
     
-    # Detect intent (income, expense, or goal)
+    # Detect intent (income, expense, goal, or contribution)
     intent = detect_intent(text)
     
     # Extract amount
@@ -258,7 +302,16 @@ def parse_text(text: str) -> dict:
     # Extract date
     date_iso = extract_date(text)
     
-    if intent == 'goal':
+    if intent == 'contribution':
+        goal_name = extract_goal_name_for_contribution(text)
+        return {
+            "type": "contribution",
+            "amount": amount,
+            "goal_name": goal_name,  # Needs to be matched to goal_id later
+            "description": text,
+            "date": date_iso
+        }
+    elif intent == 'goal':
         title = extract_goal_title(text)
         return {
             "type": "goal",
@@ -296,7 +349,16 @@ def format_parsed_data(parsed: dict) -> str:
     if parsed.get("error"):
         return f"❌ Error: {parsed['error']}"
     
-    if parsed["type"] == "goal":
+    if parsed["type"] == "contribution":
+        amount_str = f"₹{parsed['amount']:,.2f}" if parsed['amount'] else "Not detected"
+        goal_name = parsed.get('goal_name', 'Unknown')
+        return (
+            f"💵 CONTRIBUTION Detected:\n"
+            f"   Amount: {amount_str}\n"
+            f"   To Goal: {goal_name.title() if goal_name else 'Not detected'}\n"
+            f"   Description: {parsed['description']}"
+        )
+    elif parsed["type"] == "goal":
         amount_str = f"₹{parsed['amount']:,.2f}" if parsed['amount'] else "Not detected"
         return (
             f"🎯 GOAL Detected:\n"
@@ -340,6 +402,11 @@ if __name__ == "__main__":
         "Save for new phone 30000",
         "I want to save for emergency fund 200000",
         "Planning to buy a car for 500000",
+        # Contribution test cases
+        "Contribute 5000 to laptop goal",
+        "Add 10000 to my vacation fund",
+        "Put 2000 towards car",
+        "Allocate 15000 to emergency fund",
     ]
     
     print("=" * 60)

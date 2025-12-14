@@ -15,9 +15,10 @@ Controls:
     - Press ESC to exit
 
 Voice Commands:
-    - Expense: "Spent 500 on uber yesterday"
-    - Income:  "Got paid 50000 salary today"
-    - Goal:    "I want to buy laptop for 50000"
+    - Expense:      "Spent 500 on uber yesterday"
+    - Income:       "Got paid 50000 salary today"
+    - Goal:         "I want to buy laptop for 50000"
+    - Contribution: "Contribute 5000 to laptop goal"
 """
 import os
 import sys
@@ -139,7 +140,18 @@ class VoiceClient:
         """Allow user to edit parsed data."""
         print("\n📝 Edit mode (press Enter to keep current value):")
         
-        if parsed["type"] == "goal":
+        if parsed["type"] == "contribution":
+            new_amount = input(f"   Amount [{parsed['amount']}]: ").strip()
+            new_goal = input(f"   Goal name [{parsed.get('goal_name', '')}]: ").strip()
+            
+            if new_amount:
+                try:
+                    parsed['amount'] = float(new_amount)
+                except ValueError:
+                    print("⚠️ Invalid amount, keeping original")
+            if new_goal:
+                parsed['goal_name'] = new_goal.lower()
+        elif parsed["type"] == "goal":
             new_title = input(f"   Title [{parsed['title']}]: ").strip()
             new_amount = input(f"   Target Amount [{parsed['amount']}]: ").strip()
             new_rate = input(f"   Savings Rate [0.20 = 20%]: ").strip()
@@ -194,7 +206,31 @@ class VoiceClient:
     
     def send_to_api(self, parsed: dict):
         """Send parsed data to API."""
-        if parsed["type"] == "goal":
+        if parsed["type"] == "contribution":
+            # Find goal by name
+            goal_name = parsed.get("goal_name")
+            if not goal_name:
+                print("❌ Could not identify goal. Please specify the goal name.")
+                return
+            
+            goal_id = self.api_client.get_goal_id_by_name(goal_name)
+            if not goal_id:
+                print(f"❌ Goal '{goal_name}' not found. Use 'G' to see your goals.")
+                return
+            
+            result = self.api_client.contribute_to_goal(goal_id, parsed["amount"])
+            
+            if not result.get("error"):
+                print(f"\n💵 Contribution saved!")
+                print(f"   Goal: {result.get('title')}")
+                print(f"   Contributed: ₹{float(parsed['amount']):,.2f}")
+                print(f"   Total Saved: ₹{float(result.get('total_contributed', 0)):,.2f}")
+                print(f"   Progress: {float(result.get('progress_percentage', 0)):.1f}%")
+                if float(result.get("progress_percentage", 0)) >= 100:
+                    print("   🎉 GOAL COMPLETED!")
+            else:
+                print(f"❌ {result.get('error')}")
+        elif parsed["type"] == "goal":
             result = self.api_client.post_goal({
                 "title": parsed["title"],
                 "amount": parsed["amount"],
@@ -205,7 +241,7 @@ class VoiceClient:
                 print(f"\n🎯 Goal saved! ID: {result.get('id')}")
                 # Show goal timeline
                 if result.get("is_achievable"):
-                    print(f"   📊 Monthly Allocation: ₹{float(result.get('your_monthly_allocation', 0)):,.2f}")
+                    print(f"   📊 Suggested Monthly: ₹{float(result.get('suggested_monthly_contribution', 0)):,.2f}")
                     print(f"   ⏳ Estimated: {result.get('months_needed', 'N/A')} months")
                     if result.get("estimated_completion_date"):
                         completion = result["estimated_completion_date"][:10]
@@ -218,6 +254,8 @@ class VoiceClient:
                 "source": parsed["source"],
                 "date": parsed["date"]
             })
+            if not result.get("error"):
+                print(f"\n✅ Income saved! ID: {result.get('id')}")
         else:
             result = self.api_client.post_expense({
                 "title": parsed["title"],
@@ -226,9 +264,8 @@ class VoiceClient:
                 "description": parsed["description"],
                 "date": parsed["date"]
             })
-        
-        if parsed["type"] != "goal" and not result.get("error"):
-            print(f"\n✅ {parsed['type'].capitalize()} saved! ID: {result.get('id')}")
+            if not result.get("error"):
+                print(f"\n✅ Expense saved! ID: {result.get('id')}")
     
     def show_balance(self):
         """Show current balance."""
@@ -239,9 +276,12 @@ class VoiceClient:
             print(f"❌ {balance['error']}")
         else:
             print(f"\n📊 Balance Summary:")
-            print(f"   Total Income:  ₹{float(balance['total_income']):,.2f}")
-            print(f"   Total Expense: ₹{float(balance['total_expense']):,.2f}")
-            print(f"   Balance:       ₹{float(balance['remaining_balance']):,.2f}")
+            print(f"   Total Income:       ₹{float(balance['total_income']):,.2f}")
+            print(f"   Total Expense:      ₹{float(balance['total_expense']):,.2f}")
+            print(f"   Goal Contributions: ₹{float(balance.get('goal_contributions', 0)):,.2f}")
+            print(f"   ─────────────────────────────")
+            print(f"   Remaining Balance:  ₹{float(balance['remaining_balance']):,.2f}")
+            print(f"   Available to Spend: ₹{float(balance.get('available_to_spend', balance['remaining_balance'])):,.2f}")
     
     def show_categories(self):
         """Show available categories."""
@@ -273,19 +313,22 @@ class VoiceClient:
         monthly_income = float(goals_data.get("monthly_income", 0))
         savings_pool = float(goals_data.get("total_savings_pool", 0))
         active_count = goals_data.get("active_goals_count", 0)
+        total_contributed = float(goals_data.get("total_contributed_all_goals", 0))
         
         print(f"\n📊 Goals Summary:")
         print(f"   Monthly Income: ₹{monthly_income:,.2f}")
-        print(f"   Savings Pool (20%): ₹{savings_pool:,.2f}")
+        print(f"   Suggested Savings (20%): ₹{savings_pool:,.2f}")
+        print(f"   Total Contributed: ₹{total_contributed:,.2f}")
         print(f"   Active Goals: {active_count}")
         print(f"\n🎯 Your Goals ({len(goals)}):")
         print("-" * 50)
         
         for goal in goals:
             target = float(goal.get("target_amount", 0))
+            contributed = float(goal.get("total_contributed", 0))
             progress = float(goal.get("progress_percentage", 0))
             months_needed = goal.get("months_needed", "?")
-            allocation = float(goal.get("your_monthly_allocation", 0))
+            suggested = float(goal.get("suggested_monthly_contribution", 0))
             status = goal.get("status", "active")
             
             # Progress bar
@@ -294,9 +337,9 @@ class VoiceClient:
             bar = "█" * filled + "░" * (bar_length - filled)
             
             print(f"\n   📌 {goal['title']} [{status.upper()}]")
-            print(f"      Target: ₹{target:,.2f}")
+            print(f"      Target: ₹{target:,.2f} | Contributed: ₹{contributed:,.2f}")
             print(f"      Progress: [{bar}] {progress:.1f}%")
-            print(f"      Monthly: ₹{allocation:,.2f} | ETA: {months_needed} months")
+            print(f"      Suggested Monthly: ₹{suggested:,.2f} | ETA: {months_needed} months")
     
     def on_press(self, key):
         """Handle key press events."""

@@ -53,6 +53,13 @@ GOAL_KEYWORDS = [
     'save up for', 'saving up', 'fund for', 'budget for'
 ]
 
+# Contribution detection keywords - these trigger goal contribution
+CONTRIBUTION_KEYWORDS = [
+    'contribute', 'contributing', 'add to', 'adding to', 'put towards',
+    'allocate', 'allocating', 'deposit to', 'depositing to', 'save to',
+    'transfer to goal', 'move to goal', 'fund my', 'funding my'
+]
+
 # Number words for conversion
 NUMBER_WORDS = set("""
 zero one two three four five six seven eight nine ten eleven twelve thirteen 

@@ -1,19 +1,25 @@
 from fastapi import APIRouter, Depends, HTTPException, status, Query
 from sqlalchemy.orm import Session
 from typing import List
+from datetime import datetime
 
 from app.dependencies import get_db, get_current_user
-from app.models import User, Goal, GoalStatus
+from app.models import User, Goal, GoalStatus, GoalContribution
 from app.schemas import (
     GoalCreate, 
     GoalUpdate, 
     GoalResponse, 
     GoalProgressResponse,
-    AllGoalsProgressResponse
+    AllGoalsProgressResponse,
+    GoalContributionCreate,
+    GoalContributionResponse,
+    GoalContributionsListResponse
 )
 from app.services.goal_service import (
     get_goal_with_progress,
-    get_all_goals_with_progress
+    get_all_goals_with_progress,
+    get_goal_contributions,
+    check_and_complete_goal
 )
 
 router = APIRouter(prefix="/goals", tags=["Goals"])
@@ -252,3 +258,153 @@ def resume_goal(
     db.refresh(goal)
     
     return get_goal_with_progress(db, goal, current_user.id)
+
+
+# ==================== CONTRIBUTION ENDPOINTS ====================
+
+@router.post("/{goal_id}/contribute", response_model=GoalProgressResponse, status_code=status.HTTP_201_CREATED)
+def contribute_to_goal(
+    goal_id: int,
+    contribution: GoalContributionCreate,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
+    """
+    Add a contribution to a goal.
+    
+    This is where REAL money is allocated to the goal.
+    The contribution will be deducted from 'available_to_spend' in balance.
+    
+    Example: "Contribute 20000 to laptop goal"
+    """
+    # Find the goal
+    goal = db.query(Goal).filter(
+        Goal.id == goal_id,
+        Goal.user_id == current_user.id
+    ).first()
+    
+    if not goal:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Goal not found"
+        )
+    
+    if goal.status != GoalStatus.active:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=f"Cannot contribute to a {goal.status.value} goal. Resume it first."
+        )
+    
+    # Create the contribution
+    db_contribution = GoalContribution(
+        amount=contribution.amount,
+        date=contribution.date or datetime.utcnow(),
+        goal_id=goal.id,
+        user_id=current_user.id
+    )
+    db.add(db_contribution)
+    db.commit()
+    
+    # Check if goal is now complete
+    goal_completed = check_and_complete_goal(db, goal)
+    
+    # Refresh goal to get updated status
+    db.refresh(goal)
+    
+    # Return goal with updated progress
+    result = get_goal_with_progress(db, goal, current_user.id)
+    
+    # Add completion message if applicable
+    if goal_completed:
+        result["message"] = "🎉 Goal completed!"
+    
+    return result
+
+
+@router.get("/{goal_id}/contributions", response_model=GoalContributionsListResponse)
+def get_goal_contributions_list(
+    goal_id: int,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
+    """
+    Get all contributions for a specific goal.
+    
+    Useful for seeing contribution history.
+    """
+    # Find the goal
+    goal = db.query(Goal).filter(
+        Goal.id == goal_id,
+        Goal.user_id == current_user.id
+    ).first()
+    
+    if not goal:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Goal not found"
+        )
+    
+    # Get contributions
+    contributions = db.query(GoalContribution).filter(
+        GoalContribution.goal_id == goal_id,
+        GoalContribution.user_id == current_user.id
+    ).order_by(GoalContribution.date.desc()).all()
+    
+    # Calculate total
+    total_contributed = get_goal_contributions(db, goal_id)
+    
+    return {
+        "goal_id": goal.id,
+        "goal_title": goal.title,
+        "target_amount": goal.target_amount,
+        "total_contributed": total_contributed,
+        "contributions": [
+            {
+                "id": c.id,
+                "amount": c.amount,
+                "date": c.date,
+                "goal_id": c.goal_id,
+                "user_id": c.user_id,
+                "goal_title": goal.title
+            }
+            for c in contributions
+        ]
+    }
+
+
+@router.delete("/contributions/{contribution_id}", status_code=status.HTTP_204_NO_CONTENT)
+def delete_contribution(
+    contribution_id: int,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
+    """
+    Delete a contribution.
+    
+    Use this if a contribution was made by mistake.
+    """
+    contribution = db.query(GoalContribution).filter(
+        GoalContribution.id == contribution_id,
+        GoalContribution.user_id == current_user.id
+    ).first()
+    
+    if not contribution:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Contribution not found"
+        )
+    
+    # Get the goal to potentially revert its status
+    goal = db.query(Goal).filter(Goal.id == contribution.goal_id).first()
+    
+    db.delete(contribution)
+    db.commit()
+    
+    # If goal was completed, check if it should be reverted to active
+    if goal and goal.status == GoalStatus.completed:
+        new_total = get_goal_contributions(db, goal.id)
+        if new_total < goal.target_amount:
+            goal.status = GoalStatus.active
+            db.commit()
+    
+    return None

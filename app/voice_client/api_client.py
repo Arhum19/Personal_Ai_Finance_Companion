@@ -366,6 +366,78 @@ class FinanceAPIClient:
                 
         except Exception as e:
             return {"error": str(e)}
+    
+    def get_goal_id_by_name(self, goal_name: str) -> Optional[int]:
+        """
+        Find a goal ID by searching for a matching name.
+        
+        Args:
+            goal_name: Partial or full goal name (case-insensitive)
+            
+        Returns:
+            Goal ID if found, None otherwise
+        """
+        goals_data = self.get_goals()
+        if goals_data.get("error"):
+            return None
+        
+        goals = goals_data.get("goals", [])
+        goal_name_lower = goal_name.lower()
+        
+        # Try exact match first
+        for goal in goals:
+            if goal_name_lower == goal["title"].lower():
+                return goal["id"]
+        
+        # Try partial match
+        for goal in goals:
+            if goal_name_lower in goal["title"].lower():
+                return goal["id"]
+        
+        return None
+    
+    def contribute_to_goal(self, goal_id: int, amount: float) -> dict:
+        """
+        Add a contribution to a goal.
+        
+        Args:
+            goal_id: ID of the goal to contribute to
+            amount: Amount to contribute
+            
+        Returns:
+            API response with updated goal progress or error dict
+        """
+        if not self.ensure_authenticated():
+            return {"error": "Not authenticated"}
+        
+        payload = {
+            "amount": amount
+        }
+        
+        try:
+            response = requests.post(
+                f"{self.base_url}/goals/{goal_id}/contribute",
+                json=payload,
+                headers=self._get_headers()
+            )
+            
+            if response.status_code == 201:
+                print("✅ Contribution added successfully!")
+                return response.json()
+            elif response.status_code == 401:
+                print("❌ Token expired. Please login again.")
+                self._clear_token()
+                return {"error": "Token expired"}
+            elif response.status_code == 404:
+                return {"error": "Goal not found"}
+            else:
+                error = response.json().get("detail", response.text)
+                print(f"❌ Failed to add contribution: {error}")
+                return {"error": error}
+                
+        except Exception as e:
+            print(f"❌ Error adding contribution: {e}")
+            return {"error": str(e)}
 
 
 # Singleton instance

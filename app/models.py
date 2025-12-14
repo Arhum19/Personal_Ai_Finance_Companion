@@ -20,11 +20,12 @@ class User(Base):
     email = Column(String, unique=True, index=True)
     password = Column(String)
     
-    # Relationships - one user has many categories, incomes, expenses, goals
+    # Relationships - one user has many categories, incomes, expenses, goals, contributions
     categories = relationship("Category", back_populates="user", cascade="all, delete-orphan")
     incomes = relationship("Income", back_populates="user", cascade="all, delete-orphan")
     expenses = relationship("Expense", back_populates="user", cascade="all, delete-orphan")
     goals = relationship("Goal", back_populates="user", cascade="all, delete-orphan")
+    goal_contributions = relationship("GoalContribution", back_populates="user", cascade="all, delete-orphan")
 
 
 class Category(Base):
@@ -85,4 +86,20 @@ class Goal(Base):
     user_id = Column(Integer, ForeignKey("users.id"), nullable=False, index=True)
     
     # Relationships
-    user = relationship("User", back_populates="goals")   
+    user = relationship("User", back_populates="goals")
+    contributions = relationship("GoalContribution", back_populates="goal", cascade="all, delete-orphan")
+
+
+class GoalContribution(Base):
+    """GoalContribution model - track actual money contributed to goals"""
+    __tablename__ = "goal_contributions"
+    
+    id = Column(Integer, primary_key=True, index=True)
+    amount = Column(Numeric(10, 2), nullable=False)  # Amount contributed
+    date = Column(DateTime, default=datetime.utcnow, nullable=False)  # When contribution was made
+    goal_id = Column(Integer, ForeignKey("goals.id"), nullable=False, index=True)
+    user_id = Column(Integer, ForeignKey("users.id"), nullable=False, index=True)
+    
+    # Relationships
+    goal = relationship("Goal", back_populates="contributions")
+    user = relationship("User", back_populates="goal_contributions")   
