@@ -45,6 +45,14 @@ INCOME_SOURCES = {
     'other': ['other', 'misc']
 }
 
+# Goal detection keywords - these trigger goal creation
+GOAL_KEYWORDS = [
+    'goal', 'want to', 'save for', 'saving for', 'planning to buy',
+    'want a', 'need to save', 'target', 'aim to', 'wish to',
+    'dream of', 'looking to buy', 'gonna buy', 'going to buy',
+    'save up for', 'saving up', 'fund for', 'budget for'
+]
+
 # Number words for conversion
 NUMBER_WORDS = set("""
 zero one two three four five six seven eight nine ten eleven twelve thirteen 

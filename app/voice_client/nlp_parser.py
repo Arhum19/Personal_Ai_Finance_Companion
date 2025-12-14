@@ -1,6 +1,6 @@
 """
 NLP Parser for Voice Client
-Parses transcribed text into structured expense/income data
+Parses transcribed text into structured expense/income/goal data
 """
 import re
 from datetime import datetime
@@ -11,17 +11,24 @@ from .config import (
     DEFAULT_CATEGORIES, 
     INCOME_KEYWORDS, 
     INCOME_SOURCES, 
-    NUMBER_WORDS
+    NUMBER_WORDS,
+    GOAL_KEYWORDS
 )
 
 
 def detect_intent(text: str) -> str:
     """
-    Detect whether the text represents an INCOME or EXPENSE.
-    Returns: 'income' or 'expense'
+    Detect whether the text represents an INCOME, EXPENSE, or GOAL.
+    Returns: 'income', 'expense', or 'goal'
     """
     text_lower = text.lower()
     
+    # Check for goal keywords first (highest priority)
+    for keyword in GOAL_KEYWORDS:
+        if keyword in text_lower:
+            return 'goal'
+    
+    # Check for income keywords
     for keyword in INCOME_KEYWORDS:
         if keyword in text_lower:
             return 'income'
@@ -126,6 +133,69 @@ def extract_income_source(text: str) -> str:
     return 'Other'
 
 
+def extract_goal_title(text: str) -> str:
+    """
+    Extract goal title from text.
+    Tries to identify what the user wants to buy/save for.
+    
+    Examples:
+    - "I want to buy laptop for 50000" -> "Buy Laptop"
+    - "Goal: save for vacation 100000" -> "Vacation"
+    - "Save for new phone 30000" -> "New Phone"
+    """
+    text_lower = text.lower()
+    
+    # Patterns to extract the goal subject
+    patterns = [
+        r'(?:want to |wanna |gonna |going to )(?:buy|get|purchase|save for)\s+(?:a\s+)?(.+?)(?:\s+for|\s+worth|\s+at|\s+\d|$)',
+        r'(?:buy|get|purchase)\s+(?:a\s+)?(.+?)(?:\s+for|\s+worth|\s+\d|$)',
+        r'(?:save for|saving for|save up for)\s+(?:a\s+)?(.+?)(?:\s+for|\s+worth|\s+\d|$)',
+        r'goal[:\s]+(.+?)(?:\s+for|\s+worth|\s+\d|$)',
+        r'target[:\s]+(.+?)(?:\s+for|\s+worth|\s+\d|$)',
+    ]
+    
+    for pattern in patterns:
+        match = re.search(pattern, text_lower)
+        if match:
+            title = match.group(1).strip()
+            # Clean up and capitalize
+            title = re.sub(r'\s+', ' ', title)  # Normalize spaces
+            title = title.strip('.,!? ')
+            if title and len(title) > 1:
+                return title.title()  # Capitalize first letter of each word
+    
+    # Fallback: try to find common goal items
+    goal_items = {
+        'laptop': 'Buy Laptop',
+        'phone': 'Buy Phone',
+        'car': 'Buy Car',
+        'bike': 'Buy Bike',
+        'vacation': 'Vacation Fund',
+        'holiday': 'Holiday Fund',
+        'trip': 'Trip Fund',
+        'wedding': 'Wedding Fund',
+        'house': 'House Fund',
+        'home': 'Home Fund',
+        'education': 'Education Fund',
+        'course': 'Course Fee',
+        'emergency': 'Emergency Fund',
+        'iphone': 'Buy iPhone',
+        'macbook': 'Buy MacBook',
+        'watch': 'Buy Watch',
+        'camera': 'Buy Camera',
+        'tv': 'Buy TV',
+        'playstation': 'Buy PlayStation',
+        'xbox': 'Buy Xbox',
+    }
+    
+    for item, title in goal_items.items():
+        if item in text_lower:
+            return title
+    
+    # Ultimate fallback
+    return 'Savings Goal'
+
+
 def generate_title(text: str, category: str) -> str:
     """
     Generate a short title for the expense.
@@ -171,7 +241,7 @@ def parse_text(text: str) -> dict:
         text: Transcribed text from Whisper
         
     Returns:
-        dict with type, amount, category/source, description, date, title
+        dict with type, amount, category/source/title, description, date
     """
     if not text or not text.strip():
         return {
@@ -179,7 +249,7 @@ def parse_text(text: str) -> dict:
             "error": "Empty or invalid text"
         }
     
-    # Detect intent (income or expense)
+    # Detect intent (income, expense, or goal)
     intent = detect_intent(text)
     
     # Extract amount
@@ -188,7 +258,16 @@ def parse_text(text: str) -> dict:
     # Extract date
     date_iso = extract_date(text)
     
-    if intent == 'income':
+    if intent == 'goal':
+        title = extract_goal_title(text)
+        return {
+            "type": "goal",
+            "title": title,
+            "amount": amount,
+            "description": text,
+            "date": date_iso
+        }
+    elif intent == 'income':
         source = extract_income_source(text)
         return {
             "type": "income",
@@ -217,7 +296,15 @@ def format_parsed_data(parsed: dict) -> str:
     if parsed.get("error"):
         return f"❌ Error: {parsed['error']}"
     
-    if parsed["type"] == "income":
+    if parsed["type"] == "goal":
+        amount_str = f"₹{parsed['amount']:,.2f}" if parsed['amount'] else "Not detected"
+        return (
+            f"🎯 GOAL Detected:\n"
+            f"   Title: {parsed['title']}\n"
+            f"   Target Amount: {amount_str}\n"
+            f"   Description: {parsed['description']}"
+        )
+    elif parsed["type"] == "income":
         return (
             f"💰 INCOME Detected:\n"
             f"   Amount: ₹{parsed['amount']:,.2f}\n" if parsed['amount'] else "   Amount: Not detected\n"
@@ -247,6 +334,12 @@ if __name__ == "__main__":
         "Bought groceries for five hundred rupees",
         "Netflix subscription for 199",
         "Got bonus of 10000",
+        # Goal test cases
+        "I want to buy laptop for 50000",
+        "Goal: save for vacation 100000",
+        "Save for new phone 30000",
+        "I want to save for emergency fund 200000",
+        "Planning to buy a car for 500000",
     ]
     
     print("=" * 60)

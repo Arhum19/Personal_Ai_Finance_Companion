@@ -293,6 +293,79 @@ class FinanceAPIClient:
                 
         except Exception as e:
             return {"error": str(e)}
+    
+    # ==================== GOALS API ====================
+    
+    def post_goal(self, data: dict) -> dict:
+        """
+        Create a new goal.
+        
+        Args:
+            data: dict with title, target_amount (amount), savings_rate (optional)
+            
+        Returns:
+            API response dict with calculated timeline or error dict
+        """
+        if not self.ensure_authenticated():
+            return {"error": "Not authenticated"}
+        
+        # Prepare payload
+        payload = {
+            "title": data.get("title", "Savings Goal"),
+            "target_amount": data.get("amount"),
+            "savings_rate": data.get("savings_rate", 0.20)  # Default 20%
+        }
+        
+        try:
+            response = requests.post(
+                f"{self.base_url}/goals/",
+                json=payload,
+                headers=self._get_headers()
+            )
+            
+            if response.status_code == 201:
+                print("✅ Goal created successfully!")
+                return response.json()
+            elif response.status_code == 401:
+                print("❌ Token expired. Please login again.")
+                self._clear_token()
+                return {"error": "Token expired"}
+            else:
+                error = response.json().get("detail", response.text)
+                print(f"❌ Failed to create goal: {error}")
+                return {"error": error}
+                
+        except Exception as e:
+            print(f"❌ Error creating goal: {e}")
+            return {"error": str(e)}
+    
+    def get_goals(self, include_inactive: bool = False) -> dict:
+        """
+        Get all goals with progress calculations.
+        
+        Args:
+            include_inactive: Include completed/paused goals
+            
+        Returns:
+            API response with goals list and progress data
+        """
+        if not self.ensure_authenticated():
+            return {"error": "Not authenticated"}
+        
+        try:
+            response = requests.get(
+                f"{self.base_url}/goals/",
+                params={"include_inactive": include_inactive},
+                headers=self._get_headers()
+            )
+            
+            if response.status_code == 200:
+                return response.json()
+            else:
+                return {"error": "Failed to fetch goals"}
+                
+        except Exception as e:
+            return {"error": str(e)}
 
 
 # Singleton instance

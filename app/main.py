@@ -2,7 +2,7 @@ from app import models
 from app.database import engine, Base
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
-from app.routes import auth, expense, category, income, summary
+from app.routes import auth, expense, category, income, summary, goals
 
 app = FastAPI(
     title="Finance Companion API",
@@ -28,6 +28,7 @@ app.include_router(category.router)
 app.include_router(income.router)
 app.include_router(expense.router)
 app.include_router(summary.router)
+app.include_router(goals.router)
 
 @app.get("/")
 def read_root():

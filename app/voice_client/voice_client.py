@@ -11,7 +11,13 @@ Controls:
     - Press 'L' to login
     - Press 'B' to check balance
     - Press 'C' to list categories
+    - Press 'G' to view goals
     - Press ESC to exit
+
+Voice Commands:
+    - Expense: "Spent 500 on uber yesterday"
+    - Income:  "Got paid 50000 salary today"
+    - Goal:    "I want to buy laptop for 50000"
 """
 import os
 import sys
@@ -133,7 +139,24 @@ class VoiceClient:
         """Allow user to edit parsed data."""
         print("\n📝 Edit mode (press Enter to keep current value):")
         
-        if parsed["type"] == "expense":
+        if parsed["type"] == "goal":
+            new_title = input(f"   Title [{parsed['title']}]: ").strip()
+            new_amount = input(f"   Target Amount [{parsed['amount']}]: ").strip()
+            new_rate = input(f"   Savings Rate [0.20 = 20%]: ").strip()
+            
+            if new_title:
+                parsed['title'] = new_title
+            if new_amount:
+                try:
+                    parsed['amount'] = float(new_amount)
+                except ValueError:
+                    print("⚠️ Invalid amount, keeping original")
+            if new_rate:
+                try:
+                    parsed['savings_rate'] = float(new_rate)
+                except ValueError:
+                    print("⚠️ Invalid rate, using default 0.20")
+        elif parsed["type"] == "expense":
             new_title = input(f"   Title [{parsed['title']}]: ").strip()
             new_amount = input(f"   Amount [{parsed['amount']}]: ").strip()
             new_category = input(f"   Category [{parsed['category']}]: ").strip()
@@ -171,7 +194,25 @@ class VoiceClient:
     
     def send_to_api(self, parsed: dict):
         """Send parsed data to API."""
-        if parsed["type"] == "income":
+        if parsed["type"] == "goal":
+            result = self.api_client.post_goal({
+                "title": parsed["title"],
+                "amount": parsed["amount"],
+                "savings_rate": parsed.get("savings_rate", 0.20)
+            })
+            
+            if not result.get("error"):
+                print(f"\n🎯 Goal saved! ID: {result.get('id')}")
+                # Show goal timeline
+                if result.get("is_achievable"):
+                    print(f"   📊 Monthly Allocation: ₹{float(result.get('your_monthly_allocation', 0)):,.2f}")
+                    print(f"   ⏳ Estimated: {result.get('months_needed', 'N/A')} months")
+                    if result.get("estimated_completion_date"):
+                        completion = result["estimated_completion_date"][:10]
+                        print(f"   📅 Target Date: {completion}")
+                else:
+                    print("   ⚠️ No income recorded this month. Add income to see timeline.")
+        elif parsed["type"] == "income":
             result = self.api_client.post_income({
                 "amount": parsed["amount"],
                 "source": parsed["source"],
@@ -186,7 +227,7 @@ class VoiceClient:
                 "date": parsed["date"]
             })
         
-        if not result.get("error"):
+        if parsed["type"] != "goal" and not result.get("error"):
             print(f"\n✅ {parsed['type'].capitalize()} saved! ID: {result.get('id')}")
     
     def show_balance(self):
@@ -214,6 +255,49 @@ class VoiceClient:
         else:
             print("❌ No categories found or not authenticated")
     
+    def show_goals(self):
+        """Show all goals with progress."""
+        print("\n🎯 Fetching goals...")
+        goals_data = self.api_client.get_goals()
+        
+        if goals_data.get("error"):
+            print(f"❌ {goals_data['error']}")
+            return
+        
+        goals = goals_data.get("goals", [])
+        if not goals:
+            print("📭 No active goals. Create one by saying 'I want to buy...'")
+            return
+        
+        # Show summary
+        monthly_income = float(goals_data.get("monthly_income", 0))
+        savings_pool = float(goals_data.get("total_savings_pool", 0))
+        active_count = goals_data.get("active_goals_count", 0)
+        
+        print(f"\n📊 Goals Summary:")
+        print(f"   Monthly Income: ₹{monthly_income:,.2f}")
+        print(f"   Savings Pool (20%): ₹{savings_pool:,.2f}")
+        print(f"   Active Goals: {active_count}")
+        print(f"\n🎯 Your Goals ({len(goals)}):")
+        print("-" * 50)
+        
+        for goal in goals:
+            target = float(goal.get("target_amount", 0))
+            progress = float(goal.get("progress_percentage", 0))
+            months_needed = goal.get("months_needed", "?")
+            allocation = float(goal.get("your_monthly_allocation", 0))
+            status = goal.get("status", "active")
+            
+            # Progress bar
+            bar_length = 20
+            filled = int(bar_length * progress / 100)
+            bar = "█" * filled + "░" * (bar_length - filled)
+            
+            print(f"\n   📌 {goal['title']} [{status.upper()}]")
+            print(f"      Target: ₹{target:,.2f}")
+            print(f"      Progress: [{bar}] {progress:.1f}%")
+            print(f"      Monthly: ₹{allocation:,.2f} | ETA: {months_needed} months")
+    
     def on_press(self, key):
         """Handle key press events."""
         try:
@@ -233,6 +317,9 @@ class VoiceClient:
                 
                 elif key.char == 'c':
                     self.show_categories()
+                
+                elif key.char == 'g':
+                    self.show_goals()
                 
                 elif key.char == 'q':
                     print("\n👋 Goodbye!")
@@ -276,9 +363,13 @@ class VoiceClient:
         print("   L = Login")
         print("   B = Check balance")
         print("   C = List categories")
+        print("   G = View goals")
         print("   Q or ESC = Exit")
         print("-" * 60)
-        print("\n✅ Ready! Hold SPACE and speak your expense or income.")
+        print("\n✅ Ready! Hold SPACE and speak:")
+        print("   💸 Expense: 'Spent 500 on uber'")
+        print("   💰 Income:  'Got paid 50000 salary'")
+        print("   🎯 Goal:    'I want to buy laptop for 50000'")
         
         # Start audio stream
         self.stream = sd.InputStream(
