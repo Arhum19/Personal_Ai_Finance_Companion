@@ -18,12 +18,14 @@ Week 6 adds intelligent financial analysis to Finance Companion. The system now:
 Get comprehensive spending analysis with AI insights.
 
 **Request:**
+
 ```bash
 curl -X GET "http://localhost:8000/insights/spending" \
   -H "Authorization: Bearer <token>"
 ```
 
 **Response:**
+
 ```json
 {
   "spending_summary": {
@@ -84,7 +86,9 @@ curl -X GET "http://localhost:8000/insights/spending" \
     "trend": "increasing"
   },
   "ai_insights": {
-    "insights": ["Your spending increased 7% this month, primarily in Food category"],
+    "insights": [
+      "Your spending increased 7% this month, primarily in Food category"
+    ],
     "suggestions": [
       "Consider meal planning to reduce food expenses by 10-15%",
       "Weekend spending is 14% higher than weekdays - review leisure activities"
@@ -99,6 +103,7 @@ curl -X GET "http://localhost:8000/insights/spending" \
 Simulate impact of spending change.
 
 **Request:**
+
 ```bash
 curl -X POST "http://localhost:8000/insights/what-if" \
   -H "Authorization: Bearer <token>" \
@@ -107,6 +112,7 @@ curl -X POST "http://localhost:8000/insights/what-if" \
 ```
 
 **Response:**
+
 ```json
 {
   "simulation": {
@@ -152,6 +158,7 @@ cp .env.example .env
 ```
 
 Edit `.env` and add your OpenRouter API key:
+
 ```
 OPENROUTER_API_KEY=sk-or-v1-YOUR_KEY_HERE
 ```
@@ -165,6 +172,7 @@ pip install -r requirements.txt
 ```
 
 New packages added:
+
 - `httpx==0.24.1` - Async HTTP client for OpenRouter API
 - `python-dotenv==1.2.1` - Already included, loads .env file
 
@@ -197,7 +205,7 @@ If Not Cached:
     │   └─ explain_what_if_impact() - Explain scenarios
     │
     └─→ Cache Result (24 hours)
-    
+
 Response to User
 ```
 
@@ -217,23 +225,27 @@ app/
 ## Key Design Decisions
 
 ### 1. NO AI Math
+
 - All financial calculations happen in `insight_service.py` using pure SQL/Python
 - AI only explains, never calculates
 - Ensures explainability and prevents hallucinations
 
 ### 2. 24-Hour Cache
+
 - First call hits OpenRouter API
 - Subsequent calls within 24 hours return cached result
 - Cache invalidates on new expense/income
 - **Cost benefit:** Typical user = 1-2 API calls/day instead of unlimited
 
 ### 3. Safe Prompts
+
 - Prompts send only aggregated numbers, never raw data
 - Requests JSON responses (validated)
 - Fallback responses if AI fails or returns invalid JSON
 - **Never exposes OpenRouter errors to user**
 
 ### 4. Input Validation
+
 - Category: 1-50 characters
 - Percent change: -100 to +500
 - All inputs validated before processing
@@ -245,6 +257,7 @@ app/
 1. Go to http://localhost:8000/docs
 2. Login (if needed)
 3. Try GET /insights/spending
+
    - Check: All numbers are realistic
    - Check: AI suggestions match spending data
    - Check: "source" field shows "api" on first call, "cached" on second
@@ -290,10 +303,12 @@ GET /insights/spending
 **Per call cost:** ~$0.0006 (less than 1 cent)
 
 **Monthly cost (example):**
+
 - Typical user: 1-2 API calls/day
 - 30 days × 2 calls × $0.0006 = **$0.036 (3.6 cents)**
 
 **Cost saved by caching:**
+
 - Without cache: 30 calls/day × $0.0006 = $0.18
 - With 24-hour cache: 1 API call/day × $0.0006 = $0.006
 - **Savings: 97%**
@@ -309,15 +324,19 @@ GET /insights/spending
 ## Troubleshooting
 
 ### Issue: "OPENROUTER_API_KEY not set"
+
 **Solution:** Check .env file exists and has correct key format (sk-or-v1-...)
 
 ### Issue: Cache not working
+
 **Solution:** Check first call returns "source": "api", second call returns "source": "cached"
 
 ### Issue: AI returns "Unable to analyze"
+
 **Solution:** Ensure user has expenses in last 30 days
 
 ### Issue: API timeout (>10 seconds)
+
 **Solution:** OpenRouter might be slow, try again. Timeout is set to 10 seconds.
 
 ## Documentation
