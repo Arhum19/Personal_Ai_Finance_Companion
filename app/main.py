@@ -1,4 +1,3 @@
-import os
 from app import models
 from app.database import engine, Base
 from fastapi import FastAPI
@@ -14,18 +13,10 @@ app = FastAPI(
 # Create all tables
 models.Base.metadata.create_all(bind=engine)
 
-# CORS - Allow frontend URLs (Render deployments)
-allowed_origins = [
-    "http://localhost:5173",
-    "http://localhost:3000",
-    os.getenv("FRONTEND_URL", ""),  # Set this in Render dashboard
-]
-# Also allow any Render.com subdomain
-allowed_origins = [origin for origin in allowed_origins if origin]
-
+# CORS middleware (for future frontend integration)
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=allowed_origins if allowed_origins else ["*"],
+    allow_origins=["*"],  # Change to specific domain when frontend is ready
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
