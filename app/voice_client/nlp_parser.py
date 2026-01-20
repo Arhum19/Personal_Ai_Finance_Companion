@@ -13,7 +13,8 @@ from .config import (
     INCOME_SOURCES, 
     NUMBER_WORDS,
     GOAL_KEYWORDS,
-    CONTRIBUTION_KEYWORDS
+    CONTRIBUTION_KEYWORDS,
+    EXPENSE_KEYWORDS
 )
 
 
@@ -21,25 +22,156 @@ def detect_intent(text: str) -> str:
     """
     Detect whether the text represents an INCOME, EXPENSE, GOAL, or CONTRIBUTION.
     Returns: 'income', 'expense', 'goal', or 'contribution'
-    """
-    text_lower = text.lower()
     
-    # Check for contribution keywords first (highest priority)
+    Priority order and logic:
+    1. CONTRIBUTION - Adding money to an EXISTING goal (highest specificity)
+    2. GOAL - Creating a NEW savings goal
+    3. INCOME - Money received
+    4. EXPENSE - Money spent (default)
+    """
+    text_lower = text.lower().strip()
+    
+    # Calculate match scores for each intent type
+    contribution_score = 0
+    goal_score = 0
+    income_score = 0
+    expense_score = 0
+    
+    # ===== CONTRIBUTION DETECTION (highest priority) =====
+    # Key differentiator: Contributing to EXISTING goal vs creating NEW goal
+    contribution_strong_indicators = [
+        'contribute', 'contributing', 'contribution',
+        'add to goal', 'add to my goal', 'adding to goal',
+        'add to my', 'adding to my',
+        'put towards', 'putting towards',
+        'deposit to goal', 'depositing to goal',
+        'transfer to goal', 'move to goal',
+        'fund my goal', 'funding my',
+        'top up', 'topping up',
+        'towards my fund', 'to my fund', 'into my fund',
+        'towards my goal', 'to my goal', 'into my goal',
+    ]
+    
+    for indicator in contribution_strong_indicators:
+        if indicator in text_lower:
+            contribution_score += 10
+    
+    # Check for contribution keywords from config
     for keyword in CONTRIBUTION_KEYWORDS:
         if keyword in text_lower:
-            return 'contribution'
+            contribution_score += 3
     
-    # Check for goal keywords
+    # Boost if mentions existing goal-like items with "add/put/contribute"
+    existing_goal_items = ['laptop', 'car', 'vacation', 'phone', 'emergency', 'house', 'bike', 'wedding', 'trip']
+    action_words = ['add', 'put', 'contribute', 'deposit', 'transfer', 'allocate']
+    
+    for item in existing_goal_items:
+        if item in text_lower:
+            for action in action_words:
+                if action in text_lower:
+                    # Pattern like "add 5000 to laptop" or "contribute to car"
+                    contribution_score += 5
+                    break
+    
+    # ===== GOAL DETECTION =====
+    # Key differentiator: Creating NEW goal, future intent, planning
+    goal_strong_indicators = [
+        'create goal', 'new goal', 'set goal', 'make goal', 'start goal',
+        'want to buy', 'wanna buy', 'gonna buy', 'going to buy', 'planning to buy',
+        'want to get', 'wanna get', 'gonna get', 'going to get',
+        'save for', 'saving for', 'save up for', 'saving up for',
+        'need to save', 'want to save', 'start saving',
+        'dream of', 'dream to', 'wish to buy', 'hoping to',
+        'looking to buy', 'thinking of buying', 'plan to buy',
+        'set target', 'my target', 'aim to',
+        'goal for', 'goal to buy', 'goal is to',
+        'budget for', 'budgeting for',
+        'i want', 'i need', 'i wish',
+    ]
+    
+    for indicator in goal_strong_indicators:
+        if indicator in text_lower:
+            goal_score += 10
+    
+    # Check for goal keywords from config
     for keyword in GOAL_KEYWORDS:
         if keyword in text_lower:
-            return 'goal'
+            goal_score += 3
     
-    # Check for income keywords
+    # Future tense indicators boost goal score
+    future_indicators = ['will', 'going to', 'gonna', 'planning', 'want to', 'need to', 'would like']
+    for future in future_indicators:
+        if future in text_lower:
+            goal_score += 2
+    
+    # ===== INCOME DETECTION =====
+    income_strong_indicators = [
+        'got paid', 'received salary', 'received payment', 'got my salary',
+        'income', 'earned', 'credited', 'bonus received', 'got bonus','recieve','received',
+        'deposited to my', 'transferred to me', 'money came',
+        'paycheck', 'dividend', 'refund received', 'cashback',
+    ]
+    
+    for indicator in income_strong_indicators:
+        if indicator in text_lower:
+            income_score += 10
+    
     for keyword in INCOME_KEYWORDS:
         if keyword in text_lower:
-            return 'income'
+            income_score += 3
     
-    return 'expense'
+    # ===== EXPENSE DETECTION =====
+    expense_strong_indicators = [
+        'spent', 'spend', 'paid for', 'paid', 'bought', 'purchased',
+        'cost me', 'charged', 'billed', 'expense', 'used for',
+    ]
+    
+    for indicator in expense_strong_indicators:
+        if indicator in text_lower:
+            expense_score += 10
+    
+    for keyword in EXPENSE_KEYWORDS:
+        if keyword in text_lower:
+            expense_score += 3
+    
+    # ===== DISAMBIGUATION RULES =====
+    
+    # If both goal and contribution scored, use specific patterns to decide
+    if contribution_score > 0 and goal_score > 0:
+        # "add to my laptop goal" = contribution
+        if re.search(r'(add|put|contribute|deposit)\s+(to|towards|into)\s+(my\s+)?(\w+\s+)?(goal|fund)', text_lower):
+            contribution_score += 20
+        # "I want to buy laptop" = goal (even if "laptop" matches)
+        if re.search(r'(want|wanna|gonna|going|planning|need)\s+to\s+(buy|get|save|purchase)', text_lower):
+            goal_score += 20
+        # "create goal for laptop" = goal
+        if re.search(r'(create|new|set|start|make)\s+(a\s+)?(goal|target|fund)', text_lower):
+            goal_score += 20
+    
+    # Determine winner based on scores
+    scores = {
+        'contribution': contribution_score,
+        'goal': goal_score,
+        'income': income_score,
+        'expense': expense_score
+    }
+    
+    max_score = max(scores.values())
+    
+    # If no strong signals, default to expense
+    if max_score == 0:
+        return 'expense'
+    
+    # Return the intent with highest score
+    # In case of tie, priority: contribution > goal > income > expense
+    if contribution_score == max_score:
+        return 'contribution'
+    elif goal_score == max_score:
+        return 'goal'
+    elif income_score == max_score:
+        return 'income'
+    else:
+        return 'expense'
 
 
 def extract_amount(text: str) -> float | None:
@@ -172,26 +304,71 @@ def extract_goal_title(text: str) -> str:
     
     # Fallback: try to find common goal items
     goal_items = {
+        # Tech
         'laptop': 'Buy Laptop',
+        'macbook': 'Buy MacBook',
+        'computer': 'Buy Computer',
+        'pc': 'Buy PC',
         'phone': 'Buy Phone',
+        'iphone': 'Buy iPhone',
+        'smartphone': 'Buy Smartphone',
+        'tablet': 'Buy Tablet',
+        'ipad': 'Buy iPad',
+        'camera': 'Buy Camera',
+        'tv': 'Buy TV',
+        'television': 'Buy Television',
+        'monitor': 'Buy Monitor',
+        'headphones': 'Buy Headphones',
+        'airpods': 'Buy AirPods',
+        # Gaming
+        'playstation': 'Buy PlayStation',
+        'ps5': 'Buy PS5',
+        'xbox': 'Buy Xbox',
+        'nintendo': 'Buy Nintendo',
+        'gaming': 'Gaming Setup',
+        # Vehicles
         'car': 'Buy Car',
         'bike': 'Buy Bike',
+        'motorcycle': 'Buy Motorcycle',
+        'scooter': 'Buy Scooter',
+        'vehicle': 'Buy Vehicle',
+        # Travel
         'vacation': 'Vacation Fund',
         'holiday': 'Holiday Fund',
         'trip': 'Trip Fund',
+        'travel': 'Travel Fund',
+        'tour': 'Tour Fund',
+        'honeymoon': 'Honeymoon Fund',
+        # Life Events
         'wedding': 'Wedding Fund',
+        'marriage': 'Marriage Fund',
+        'birthday': 'Birthday Fund',
+        # Property
         'house': 'House Fund',
         'home': 'Home Fund',
+        'apartment': 'Apartment Fund',
+        'flat': 'Flat Fund',
+        'property': 'Property Fund',
+        'down payment': 'Down Payment Fund',
+        # Education
         'education': 'Education Fund',
         'course': 'Course Fee',
+        'college': 'College Fund',
+        'university': 'University Fund',
+        'degree': 'Degree Fund',
+        'masters': 'Masters Fund',
+        'mba': 'MBA Fund',
+        # Financial
         'emergency': 'Emergency Fund',
-        'iphone': 'Buy iPhone',
-        'macbook': 'Buy MacBook',
+        'savings': 'Savings Fund',
+        'retirement': 'Retirement Fund',
+        'investment': 'Investment Fund',
+        # Accessories
         'watch': 'Buy Watch',
-        'camera': 'Buy Camera',
-        'tv': 'Buy TV',
-        'playstation': 'Buy PlayStation',
-        'xbox': 'Buy Xbox',
+        'jewelry': 'Buy Jewelry',
+        'ring': 'Buy Ring',
+        'furniture': 'Buy Furniture',
+        'appliance': 'Buy Appliance',
     }
     
     for item, title in goal_items.items():
@@ -210,13 +387,22 @@ def extract_goal_name_for_contribution(text: str) -> str:
     - "Contribute 5000 to laptop goal" -> "laptop"
     - "Add 10000 to my vacation fund" -> "vacation"
     - "Put 2000 towards car" -> "car"
+    - "Add money to my emergency fund" -> "emergency"
     """
     text_lower = text.lower()
     
-    # Patterns to extract goal name from contribution
+    # Extended patterns to extract goal name from contribution (ordered by specificity)
     patterns = [
-        r'(?:to|towards|for)\s+(?:my\s+)?(?:the\s+)?(.+?)(?:\s+goal|\s+fund|\s*$)',
-        r'(?:contribute|add|put|allocate|deposit|save)\s+\d+\s+(?:to|towards|for)\s+(?:my\s+)?(.+?)(?:\s+goal|\s+fund|\s*$)',
+        # "contribute/add/put X to my laptop goal"
+        r'(?:contribute|add|put|deposit|allocate|transfer|save)\s+(?:\d+\s+)?(?:to|towards|into)\s+(?:my\s+)?(?:the\s+)?(.+?)(?:\s+goal|\s+fund|\s+target)',
+        # "contribute/add/put X to laptop" (no goal/fund suffix)
+        r'(?:contribute|add|put|deposit|allocate|transfer)\s+(?:\d+\s+)?(?:to|towards|into)\s+(?:my\s+)?(?:the\s+)?([a-zA-Z]+)',
+        # "to my laptop goal"
+        r'(?:to|towards|into)\s+(?:my\s+)?(?:the\s+)?(.+?)(?:\s+goal|\s+fund|\s+target)',
+        # "fund my laptop"
+        r'(?:fund|funding)\s+(?:my\s+)?(?:the\s+)?(.+?)(?:\s+goal|\s*$)',
+        # "top up my laptop goal"
+        r'(?:top\s*up)\s+(?:my\s+)?(?:the\s+)?(.+?)(?:\s+goal|\s+fund|\s*$)',
     ]
     
     for pattern in patterns:
@@ -225,15 +411,33 @@ def extract_goal_name_for_contribution(text: str) -> str:
             goal_name = match.group(1).strip()
             goal_name = re.sub(r'\s+', ' ', goal_name)
             goal_name = goal_name.strip('.,!? ')
-            if goal_name and len(goal_name) > 1:
+            # Filter out noise words
+            noise_words = ['a', 'an', 'the', 'my', 'some', 'more', 'money', 'funds', 'amount']
+            if goal_name and goal_name.lower() not in noise_words and len(goal_name) > 1:
                 return goal_name.lower()
     
-    # Fallback: look for common goal item names
-    goal_items = ['laptop', 'phone', 'car', 'bike', 'vacation', 'holiday', 'trip', 
-                  'wedding', 'house', 'home', 'education', 'emergency', 'iphone', 
-                  'macbook', 'watch', 'camera', 'tv', 'playstation', 'xbox']
+    # Fallback: look for common goal item names with priority
+    goal_items_priority = [
+        # Tech items
+        'laptop', 'macbook', 'iphone', 'phone', 'computer', 'pc', 'tablet', 'ipad',
+        'playstation', 'xbox', 'gaming', 'camera', 'tv', 'monitor',
+        # Vehicles
+        'car', 'bike', 'motorcycle', 'scooter', 'vehicle',
+        # Life events
+        'wedding', 'marriage', 'honeymoon',
+        # Travel
+        'vacation', 'holiday', 'trip', 'travel', 'tour',
+        # Property
+        'house', 'home', 'apartment', 'flat', 'property',
+        # Education
+        'education', 'course', 'degree', 'college', 'university',
+        # Emergency/General
+        'emergency', 'savings', 'retirement', 'investment',
+        # Accessories
+        'watch', 'jewelry', 'ring',
+    ]
     
-    for item in goal_items:
+    for item in goal_items_priority:
         if item in text_lower:
             return item
     
@@ -250,23 +454,109 @@ def generate_title(text: str, category: str) -> str:
     # Try to extract more specific context
     text_lower = text.lower()
     
-    # Look for specific items mentioned
+    # Look for specific items mentioned (comprehensive list)
     specific_items = {
+        # Food & Drinks
         'pizza': 'Pizza',
         'burger': 'Burger',
         'coffee': 'Coffee',
+        'tea': 'Tea',
+        'lunch': 'Lunch',
+        'dinner': 'Dinner',
+        'breakfast': 'Breakfast',
+        'brunch': 'Brunch',
+        'snack': 'Snacks',
+        'biryani': 'Biryani',
+        'pasta': 'Pasta',
+        'sushi': 'Sushi',
+        'sandwich': 'Sandwich',
+        'salad': 'Salad',
+        'dessert': 'Dessert',
+        'ice cream': 'Ice Cream',
+        'juice': 'Juice',
+        'smoothie': 'Smoothie',
+        # Food Delivery/Restaurants
+        'zomato': 'Zomato Order',
+        'swiggy': 'Swiggy Order',
+        'doordash': 'DoorDash Order',
+        'ubereats': 'Uber Eats Order',
+        'mcdonalds': 'McDonalds',
+        'kfc': 'KFC',
+        'dominos': 'Dominos Pizza',
+        'subway': 'Subway',
+        'starbucks': 'Starbucks',
+        # Transport
         'uber': 'Uber Ride',
+        'ola': 'Ola Ride',
+        'lyft': 'Lyft Ride',
         'taxi': 'Taxi Ride',
+        'cab': 'Cab Ride',
+        'rapido': 'Rapido Ride',
+        'auto': 'Auto Rickshaw',
+        'rickshaw': 'Rickshaw',
+        'metro': 'Metro Ticket',
+        'bus': 'Bus Fare',
+        'train': 'Train Ticket',
+        'flight': 'Flight Ticket',
+        'petrol': 'Petrol/Fuel',
+        'diesel': 'Diesel/Fuel',
+        'gas': 'Gas/Fuel',
+        'parking': 'Parking Fee',
+        'toll': 'Toll Fee',
+        # Shopping
+        'amazon': 'Amazon Order',
+        'flipkart': 'Flipkart Order',
+        'myntra': 'Myntra Order',
+        'grocery': 'Groceries',
+        'groceries': 'Groceries',
+        'shopping': 'Shopping',
+        'clothes': 'Clothes',
+        'shoes': 'Shoes',
+        # Entertainment & Subscriptions
         'netflix': 'Netflix',
         'spotify': 'Spotify',
-        'amazon': 'Amazon Order',
+        'youtube': 'YouTube Premium',
+        'prime': 'Amazon Prime',
+        'disney': 'Disney+',
+        'hbo': 'HBO',
+        'hulu': 'Hulu',
+        'movie': 'Movie Ticket',
+        'cinema': 'Cinema',
+        'concert': 'Concert Ticket',
+        'event': 'Event Ticket',
+        # Bills & Utilities
         'electricity': 'Electricity Bill',
+        'water': 'Water Bill',
+        'internet': 'Internet Bill',
+        'wifi': 'WiFi Bill',
         'rent': 'Rent Payment',
+        'phone': 'Phone Bill',
+        'mobile': 'Mobile Bill',
+        'recharge': 'Mobile Recharge',
+        'insurance': 'Insurance',
+        'emi': 'EMI Payment',
+        'loan': 'Loan Payment',
+        # Health
         'gym': 'Gym Membership',
         'medicine': 'Medicine',
-        'grocery': 'Groceries',
-        'petrol': 'Petrol/Fuel',
-        'recharge': 'Mobile Recharge',
+        'pharmacy': 'Pharmacy',
+        'doctor': 'Doctor Visit',
+        'hospital': 'Hospital',
+        'clinic': 'Clinic',
+        'checkup': 'Health Checkup',
+        'dentist': 'Dentist',
+        'therapy': 'Therapy',
+        # Personal Care
+        'haircut': 'Haircut',
+        'salon': 'Salon',
+        'spa': 'Spa',
+        'grooming': 'Grooming',
+        # Education
+        'course': 'Course Fee',
+        'tuition': 'Tuition Fee',
+        'books': 'Books',
+        'udemy': 'Udemy Course',
+        'coursera': 'Coursera Course',
     }
     
     for item, item_title in specific_items.items():

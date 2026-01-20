@@ -1,1 +1,89 @@
 @import "tailwindcss";
+
+/* Dark mode support */
+@custom-variant dark (&:where(.dark, .dark *));
+
+/* Dark mode base styles */
+.dark {
+  color-scheme: dark;
+}
+
+.dark body {
+  background-color: #111827;
+  color: #f3f4f6;
+}
+
+/* Dark mode utility classes */
+.dark .bg-white {
+  background-color: #1f2937 !important;
+}
+
+.dark .bg-gray-50 {
+  background-color: #374151 !important;
+}
+
+.dark .bg-gray-100 {
+  background-color: #374151 !important;
+}
+
+.dark .text-gray-800 {
+  color: #f3f4f6 !important;
+}
+
+.dark .text-gray-700 {
+  color: #e5e7eb !important;
+}
+
+.dark .text-gray-600 {
+  color: #d1d5db !important;
+}
+
+.dark .text-gray-500 {
+  color: #9ca3af !important;
+}
+
+.dark .border-gray-200 {
+  border-color: #4b5563 !important;
+}
+
+.dark .border-gray-300 {
+  border-color: #4b5563 !important;
+}
+
+.dark .shadow-lg {
+  box-shadow: 0 10px 15px -3px rgba(0, 0, 0, 0.3),
+    0 4px 6px -2px rgba(0, 0, 0, 0.2) !important;
+}
+
+/* Dark mode inputs */
+.dark input,
+.dark textarea,
+.dark select {
+  background-color: #374151 !important;
+  border-color: #4b5563 !important;
+  color: #f3f4f6 !important;
+}
+
+.dark input::placeholder,
+.dark textarea::placeholder {
+  color: #9ca3af !important;
+}
+
+/* Dark mode cards and containers */
+.dark .rounded-2xl.shadow-lg {
+  background-color: #1f2937;
+}
+
+/* Dark mode sidebar */
+.dark .bg-gradient-to-b.from-gray-900 {
+  background: linear-gradient(to bottom, #0f172a, #1e293b) !important;
+}
+
+/* Dark mode hover states */
+.dark .hover\:bg-gray-50:hover {
+  background-color: #374151 !important;
+}
+
+.dark .hover\:bg-gray-100:hover {
+  background-color: #4b5563 !important;
+}

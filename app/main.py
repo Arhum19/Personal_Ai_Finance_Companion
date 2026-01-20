@@ -1,8 +1,9 @@
+import os
 from app import models
 from app.database import engine, Base
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
-from app.routes import auth, expense, category, income, summary, goals, insights
+from app.routes import auth, expense, category, income, summary, goals, insights, voice
 
 app = FastAPI(
     title="Finance Companion API",
@@ -13,10 +14,18 @@ app = FastAPI(
 # Create all tables
 models.Base.metadata.create_all(bind=engine)
 
-# CORS middleware (for future frontend integration)
+# CORS - Allow frontend URLs (Render deployments)
+allowed_origins = [
+    "http://localhost:5173",
+    "http://localhost:3000",
+    os.getenv("FRONTEND_URL", ""),  # Set this in Render dashboard
+]
+# Also allow any Render.com subdomain
+allowed_origins = [origin for origin in allowed_origins if origin]
+
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],  # Change to specific domain when frontend is ready
+    allow_origins=allowed_origins if allowed_origins else ["*"],
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
@@ -30,6 +39,7 @@ app.include_router(expense.router)
 app.include_router(summary.router)
 app.include_router(goals.router)
 app.include_router(insights.router)
+app.include_router(voice.router)
 
 @app.get("/")
 def read_root():

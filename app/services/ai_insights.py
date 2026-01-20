@@ -207,20 +207,32 @@ async def explain_what_if_impact(
     new_savings_rate = scenario_data['new_savings_rate']
     savings_impact = scenario_data.get('savings_impact', 0)
     
+    # Determine direction of change
+    direction = "down" if percent_change < 0 else "up"
+    abs_percent = abs(percent_change)
+    
+    # Determine impact on savings
+    if savings_impact > 0:
+        impact_direction = "increase"
+        impact_verb = "would increase"
+    else:
+        impact_direction = "decrease"
+        impact_verb = "would decrease"
+    
     prompt = f"""You are a friendly personal finance buddy helping someone think through a "what if" scenario. Talk to them like a friend who cares about their financial future.
 
 Their situation right now:
 - They earn ₹{income:,.0f} per month
 - They're saving ₹{current_savings:,.0f} every month (that's awesome!)
 
-They want to know: "What if my {category} expenses go up by {percent_change}%?"
+They want to know: "What if my {category} expenses go {direction} by {abs_percent}%?"
 
 The math shows:
-- Their savings would drop to ₹{new_savings:,.0f} per month
-- That's a {abs(savings_impact):,.0f} reduction in what they can save
+- Their savings would {impact_verb} to ₹{new_savings:,.0f} per month
+- That's a ₹{abs(savings_impact):,.0f} {impact_direction} in what they can save
 - Their new savings rate would be {new_savings_rate:.1f}%
 
-Give them a real, human response. Explain what this means for their money in a way they can actually understand and feel. Be encouraging but honest.
+Give them a real, human response. Explain what this change means for their money in a way they can actually understand and feel. Be encouraging but honest.
 
 Respond with ONLY valid JSON. No extra text.
 

@@ -1,10 +1,12 @@
 from fastapi import APIRouter, Depends, HTTPException, status, Query
 from sqlalchemy.orm import Session
+from sqlalchemy import func
 from typing import List
 from datetime import datetime
+from decimal import Decimal
 
 from app.dependencies import get_db, get_current_user
-from app.models import User, Goal, GoalStatus, GoalContribution
+from app.models import User, Goal, GoalStatus, GoalContribution, Income, Expense
 from app.schemas import (
     GoalCreate, 
     GoalUpdate, 
@@ -293,6 +295,50 @@ def contribute_to_goal(
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail=f"Cannot contribute to a {goal.status.value} goal. Resume it first."
+        )
+    
+    # ===== VALIDATION: Check if user has sufficient available balance =====
+    # Calculate current financial balance
+    income_result = db.query(
+        func.coalesce(func.sum(Income.amount), 0)
+    ).filter(Income.user_id == current_user.id).scalar()
+    
+    expense_result = db.query(
+        func.coalesce(func.sum(Expense.amount), 0)
+    ).filter(Expense.user_id == current_user.id).scalar()
+    
+    current_goal_contributions = db.query(
+        func.coalesce(func.sum(GoalContribution.amount), 0)
+    ).filter(GoalContribution.user_id == current_user.id).scalar()
+    
+    total_income = Decimal(income_result) if income_result else Decimal("0")
+    total_expense = Decimal(expense_result) if expense_result else Decimal("0")
+    current_contributions = Decimal(current_goal_contributions) if current_goal_contributions else Decimal("0")
+    
+    remaining_balance = total_income - total_expense
+    available_to_spend = remaining_balance - current_contributions
+    contribution_amount = Decimal(str(contribution.amount))
+    
+    # FIRST CHECK: If available balance is already zero or negative, reject any contribution
+    if available_to_spend <= Decimal("0"):
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=f"Cannot contribute to goal. Your available balance is insufficient. "
+                   f"Total income: ${float(total_income):.2f}. "
+                   f"Total expenses: ${float(total_expense):.2f}. "
+                   f"Current goal contributions: ${float(current_contributions):.2f}. "
+                   f"Available balance: ${float(available_to_spend):.2f}. "
+                   f"Please increase your income or reduce expenses/other goal contributions."
+        )
+    
+    # SECOND CHECK: If contribution exceeds available balance, reject it
+    if contribution_amount > available_to_spend:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=f"Insufficient funds for this contribution. "
+                   f"Available balance: ${float(available_to_spend):.2f}. "
+                   f"Requested contribution: ${float(contribution_amount):.2f}. "
+                   f"Please contribute an amount equal to or less than ${float(available_to_spend):.2f}."
         )
     
     # Create the contribution

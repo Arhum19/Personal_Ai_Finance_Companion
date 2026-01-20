@@ -97,10 +97,26 @@ class ExpenseResponse(BaseModel):
     description: str | None
     date: datetime
     category_id: int
+    category_name: str | None = None
     user_id: int
 
     class Config:
         from_attributes = True
+        
+    @classmethod
+    def from_orm_with_category(cls, expense):
+        """Helper to populate category_name from relationship"""
+        data = {
+            "id": expense.id,
+            "title": expense.title,
+            "amount": expense.amount,
+            "description": expense.description,
+            "date": expense.date,
+            "category_id": expense.category_id,
+            "category_name": expense.category.name if expense.category else None,
+            "user_id": expense.user_id
+        }
+        return cls(**data)
 
 
 # ==================== SUMMARY SCHEMAS ====================
